@@ -1,5 +1,6 @@
 import copy
 from collections.abc import Iterable as _Iterable
+from collections.abc import Sequence as _Sequence
 from collections.abc import Sized as _Sized
 import dataclasses
 import enum
@@ -12,17 +13,36 @@ from typing import SupportsIndex as _Int
 from ._color import color, RGB
 from . import _helpers
 
-def _2d_arr_size(arr: _Iterable[_Sized], /) -> tuple[int, int | None]:
-    isize: int = 0
+def _2d_arr_size(arr: _Sequence[_Sized], /) -> tuple[int, int | None]:
+    isize: int = len(arr)
     jsize: int | None = None
-    for i in arr:
-        length = len(i)
+    for idx, length in enumerate(map(len, arr)):
         if jsize is None:
             jsize = length
         elif jsize != length:
             raise ValueError(f"{arr!r} is not a valid 2D array")
-        isize += 1
     return (isize, jsize)
+
+def _ensure_size(
+        arr: _Sequence[_Sized],
+        isize: int,
+        jsize: int,
+        name: str,
+        /
+) -> None:
+    arr_isize = len(arr)
+    if arr_isize != isize:
+        raise ValueError(
+            f"Expected {isize} elements in {name}, found {arr_isize}"
+            f" (note: {name}={arr!r})"
+        )
+    for idx, length in enumerate(map(len, arr)):
+        if length != jsize:
+            raise ValueError(
+                f"Expected {jsize} elements in {name}[{idx}], found {length}"
+                f" (note: {name}={arr!r})"
+            )
+        arr_isize += 1
 
 @typing.final
 class Direction(enum.StrEnum):
@@ -213,6 +233,10 @@ return for a given `self` `self.turned(self.direction.<property>)`.
 @typing.final
 @dataclasses.dataclass(init=False, repr=False, match_args=False, slots=True)
 class World:
+    """Class that stores the state of an Ultra Karel world. Super Karel is just
+Ultra Karel without randomness or color support, and Normal Karel is just Super
+Karel without `turn_right` or `turn_around`. See method docstrings of
+`.globals()` and `.exec_from()` for more info."""
     _karel: Karel
     _ball_counts: list[list[int]]
     _horizontal_walls: list[list[bool]]
@@ -243,32 +267,30 @@ class World:
                 (False for _ in range(jsize)) for _ in range(isize - 1)
             )
         self._horizontal_walls = [
-            [
-                _helpers.typefilt(j, bool)
-                for j in _helpers.typefilt(i, _Iterable)
-            ]
+            [bool(j) for j in _helpers.typefilt(i, _Iterable)]
             for i in _helpers.typefilt(horizontal_walls, _Iterable)
         ]
-        hsize = _2d_arr_size(self._horizontal_walls)
-        if isize == 1:
-            if hsize != (0, None):
-                raise ValueError("Arrays are not of consistent sizes")
-        elif _2d_arr_size(self._horizontal_walls) != (isize - 1, jsize):
-            raise ValueError("Arrays are not of consistent sizes")
+        _ensure_size(
+            self._horizontal_walls,
+            isize - 1,
+            jsize,
+            "horizontal_walls"
+        )
 
         if vertical_walls is None:
             vertical_walls = (
                 (False for _ in range(jsize - 1)) for _ in range(isize)
             )
         self._vertical_walls = [
-            [
-                _helpers.typefilt(j, bool)
-                for j in _helpers.typefilt(i, _Iterable)
-            ]
+            [bool(j) for j in _helpers.typefilt(i, _Iterable)]
             for i in _helpers.typefilt(vertical_walls, _Iterable)
         ]
-        if _2d_arr_size(self._vertical_walls) != (isize, jsize - 1):
-            raise ValueError("Arrays are not of consistent sizes")
+        _ensure_size(
+            self._horizontal_walls,
+            isize,
+            jsize - 1,
+            "vertical_walls"
+        )
         
         if colors is None:
             colors = (("white" for _ in range(jsize)) for _ in range(isize))
@@ -276,8 +298,7 @@ class World:
             [RGB.from_str(j) for j in _helpers.typefilt(i, _Iterable)]
             for i in _helpers.typefilt(colors, _Iterable)
         ]
-        if _2d_arr_size(self._colors) != (isize, jsize):
-            raise ValueError("Arrays are not of consistent sizes")
+        _ensure_size(self._horizontal_walls, isize, jsize, "colors")
         
         if not self.size._in_bounds(karel.position):
             raise ValueError(
@@ -317,6 +338,10 @@ class World:
     @size.setter
     def size(self, new: AvenueAndStreet, /) -> None:
         new = _helpers.typefilt(new, AvenueAndStreet)
+        if new.street == 0 or new.avenue == 0:
+            raise ValueError(
+                f"New size cannot have 0 as a dimension (new size = {new})"
+            )
         if not new._in_bounds(self.karel.position):
             raise ValueError(
                 "Karel would be out of bounds "
