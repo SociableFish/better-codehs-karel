@@ -1,4 +1,4 @@
-# better-codehs-karel 0.1.0
+# better-codehs-karel 0.2.0
 A simulator and library for the CodeHS Karel.
 
 It has various benefits over the official CodeHS Karel, including but not limited to:
